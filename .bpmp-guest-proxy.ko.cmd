@@ -1,0 +1,1 @@
+cmd_/home/vadikas/BPMP/bpmp-guest-proxy/bpmp-guest-proxy.ko := ld -r  -EL  -maarch64elf  --build-id=sha1  -T scripts/module.lds -o /home/vadikas/BPMP/bpmp-guest-proxy/bpmp-guest-proxy.ko /home/vadikas/BPMP/bpmp-guest-proxy/bpmp-guest-proxy.o /home/vadikas/BPMP/bpmp-guest-proxy/bpmp-guest-proxy.mod.o;  true

@@ -1,0 +1,1 @@
+cmd_/home/vadikas/BPMP/bpmp-guest-proxy/Module.symvers := sed 's/ko$$/o/' /home/vadikas/BPMP/bpmp-guest-proxy/modules.order | scripts/mod/modpost -m  -E  -o /home/vadikas/BPMP/bpmp-guest-proxy/Module.symvers -e -i Module.symvers   -T -
