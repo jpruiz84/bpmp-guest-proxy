@@ -170,7 +170,8 @@ static ssize_t read(struct file *filep, char *buffer, size_t len, loff_t *offset
 
 int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *msg)
 {   
-    volatile uint64_t *mem = phys_to_virt(BASEADDR);
+    volatile uint64_t *mem =  ioremap_nocache(BASEADDR,MEM_SIZE);
+
     
     if (msg->tx.size >= MESSAGE_SIZE)
         return -EINVAL;
