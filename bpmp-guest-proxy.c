@@ -189,13 +189,13 @@ int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *m
     if (msg->tx.size >= MESSAGE_SIZE)
         return -EINVAL;
     
-    memcpy(mem[TX_BUF], msg->tx.data, msg->tx.size);
+    memcpy(&mem[TX_BUF], msg->tx.data, msg->tx.size);
     mem[TX_SIZ] = msg->tx.size;
 
     if (msg->rx.size >= MESSAGE_SIZE)
         return -EINVAL;
     
-    memcpy(mem[RX_BUF], msg->rx.data, msg->rx.size);
+    memcpy(&mem[RX_BUF], msg->rx.data, msg->rx.size);
     mem[RX_SIZ] = msg->rx.size;
 
     mem[MRQ] = msg->mrq; // Execute the request
