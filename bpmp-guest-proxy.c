@@ -260,12 +260,12 @@ static ssize_t write(struct file *filep, const char *buffer, size_t len, loff_t 
 		goto out_cfu;
 	}
 
-	if (copy_from_user(txbuf, buffer, kbuf->tx.size)) {
+	if (copy_from_user(txbuf, kbuf->tx.data, kbuf->tx.size)) {
 		printk("copy_from_user(2) failed\n");
 		goto out_cfu;
 	}
 
-	if (copy_from_user(rxbuf, buffer, kbuf->rx.size)) {
+	if (copy_from_user(rxbuf, kbuf->rx.data, kbuf->rx.size)) {
 		printk("copy_from_user(3) failed\n");
 		goto out_cfu;
 	}	
