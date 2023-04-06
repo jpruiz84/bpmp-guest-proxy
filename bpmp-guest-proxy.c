@@ -37,9 +37,7 @@ MODULE_VERSION("0.1");
 #define BASEADDR 0x090c0000
 
 
-static volatile uint64_t *mem = NULL;
-
-
+static volatile void __iomem  *mem_iova = NULL;
 
 extern int tegra_bpmp_transfer(struct tegra_bpmp *, struct tegra_bpmp_message *);
 extern struct tegra_bpmp *tegra_bpmp_host_device;
@@ -123,8 +121,20 @@ int init_module(void)
 
 
 	// map iomem
-	mem =  memremap(BASEADDR,MEM_SIZE,MEMREMAP_WT);
-    tegra_bpmp_transfer_redirect=my_tegra_bpmp_transfer; //hook func
+	mem_iova =  ioremap(BASEADDR, MEM_SIZE);
+
+	if (!mem_iova) {
+        printk(KERN_ERR "ioremap failed\n");
+        return -ENOMEM;
+    }
+
+	printk("mem_iova: %p\n", mem_iova);
+
+	printk("my_tegra_bpmp_transfer\n");
+
+	tegra_bpmp_transfer_redirect=my_tegra_bpmp_transfer; //hook func
+
+
 
 	return 0;
 }
@@ -183,31 +193,34 @@ static ssize_t read(struct file *filep, char *buffer, size_t len, loff_t *offset
 
 int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *msg)
 {   
-    
 
-    
+	unsigned char io_buffer[MEM_SIZE];
+	
     if (msg->tx.size >= MESSAGE_SIZE)
         return -EINVAL;
-    
-    memcpy(&mem[TX_BUF], msg->tx.data, msg->tx.size);
-    mem[TX_SIZ] = msg->tx.size;
 
-    if (msg->rx.size >= MESSAGE_SIZE)
-        return -EINVAL;
-    
-    memcpy(&mem[RX_BUF], msg->rx.data, msg->rx.size);
-    mem[RX_SIZ] = msg->rx.size;
+    memcpy(&io_buffer[TX_BUF], msg->tx.data, msg->tx.size);
+	io_buffer[TX_SIZ] = msg->tx.size;
 
-    mem[MRQ] = msg->mrq; // Execute the request
+ 
+	io_buffer[MRQ] = msg->mrq;
+	
+	// Execute the request
+	memcpy_toio(mem_iova, io_buffer, MEM_SIZE);
 
-    memcpy(msg->tx.data, (const void *)mem[TX_BUF], mem[TX_SIZ]);
-    msg->tx.size=mem[TX_SIZ];
+	// Read response
+	memcpy_fromio(io_buffer, mem_iova, MEM_SIZE);
 
-    memcpy(msg->rx.data, (const void *)mem[RX_BUF], mem[RX_SIZ]);
-    msg->rx.size=mem[RX_SIZ];
-    msg->rx.ret=mem[RET_COD];
+	msg->tx.size = io_buffer[TX_SIZ];
+    memcpy(msg->tx.data, &io_buffer[TX_BUF], msg->tx.size);
 
-    
+	msg->rx.size = io_buffer[RX_SIZ];
+	memcpy(msg->rx.data, &io_buffer[RX_BUF], msg->rx.size);
+	
+	msg->rx.ret = io_buffer[RET_COD];
+
+	printk("msg->rx.ret: %d\n", msg->rx.ret);
+
     return msg->rx.ret;
 }
 
@@ -217,9 +230,131 @@ int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *m
 
 #define BUF_SIZE 1024 
 
+// Usage:
+//     hexDump(desc, addr, len, perLine);
+//         desc:    if non-NULL, printed as a description before hex dump.
+//         addr:    the address to start dumping from.
+//         len:     the number of bytes to dump.
+//         perLine: number of bytes on each output line.
+
+void static hexDump (
+    const char * desc,
+    const void * addr,
+    const int len
+) {
+    // Silently ignore silly per-line values.
+
+    int i;
+    unsigned char buff[17];
+	unsigned char out_buff[4000];
+	unsigned char *p_out_buff = out_buff;
+    const unsigned char * pc = (const unsigned char *)addr;
+
+
+
+    // Output description if given.
+
+    if (desc != NULL) printk ("%s:\n", desc);
+
+    // Length checks.
+
+    if (len == 0) {
+        printk("  ZERO LENGTH\n");
+        return;
+    }
+    if (len < 0) {
+        printk("  NEGATIVE LENGTH: %d\n", len);
+        return;
+    }
+
+	if(len > 400){
+        printk("  VERY LONG: %d\n", len);
+        return;
+    }
+
+    // Process every byte in the data.
+
+    for (i = 0; i < len; i++) {
+        // Multiple of perLine means new or first line (with line offset).
+
+        if ((i % 16) == 0) {
+            // Only print previous-line ASCII buffer for lines beyond first.
+
+            if (i != 0) {
+				p_out_buff += sprintf (p_out_buff, "  %s\n", buff);
+			}
+            // Output the offset of current line.
+
+            p_out_buff += sprintf (p_out_buff,"  %04x ", i);
+        }
+
+        // Now the hex code for the specific character.
+
+        p_out_buff += sprintf (p_out_buff, " %02x", pc[i]);
+
+        // And buffer a printable ASCII character for later.
+
+        if ((pc[i] < 0x20) || (pc[i] > 0x7e)) // isprint() may be better.
+            buff[i % 16] = '.';
+        else
+            buff[i % 16] = pc[i];
+        buff[(i % 16) + 1] = '\0';
+    }
+
+    // Pad out last line if not exactly perLine characters.
+
+    while ((i % 16) != 0) {
+        p_out_buff += sprintf (p_out_buff, "   ");
+        i++;
+    }
+
+    // And print the final ASCII buffer.
+
+    p_out_buff += sprintf (p_out_buff, "  %s\n", buff);
+
+	printk("%s", out_buff);
+}
+
+
 static ssize_t write(struct file *filep, const char *buffer, size_t len, loff_t *offset)
 {
 
+
+   	int ret;
+
+	struct tegra_bpmp_message msg;
+	struct mrq_reset_request request;
+	struct tegra_bpmp *bpmp;
+
+
+    // Configuration to asert UARTA reset
+	request.cmd = 0x01;
+	request.reset_id = 0x65;
+
+	//memset(msg, 0, sizeof(struct tegra_bpmp_message));
+	msg.mrq = MRQ_RESET;
+	msg.tx.data = &request;
+	msg.tx.size = sizeof(struct mrq_reset_request);
+
+	printk("Writing from guest driver\n");
+  
+    printk("&msg: %p\n", &msg);
+    hexDump ("msg", &msg, sizeof(struct tegra_bpmp_message));
+    printk("msg.tx.data: %p\n", msg.tx.data);
+    hexDump ("msg.tx.data", msg.tx.data, msg.tx.size);
+
+
+	ret = my_tegra_bpmp_transfer(bpmp, &msg);
+
+    if (ret < 0)
+    {
+        printk("Failed to write the message to the device.");
+        return ret;
+    }
+
+	return ret;
+
+#if 0
 	int ret = len;
 	struct tegra_bpmp_message *kbuf = NULL;
 	void *txbuf = NULL;
@@ -316,6 +451,6 @@ out_cfu:
 	kfree(txbuf);
 	kfree(rxbuf);
     return -EINVAL;
-
+#endif
 }
 
