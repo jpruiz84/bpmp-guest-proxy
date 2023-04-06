@@ -11,7 +11,11 @@
 #include <linux/fs.h>		  // File-system support.
 #include <linux/uaccess.h>	  // User access copy function support.
 #include <linux/slab.h>
+#include <linux/mm.h>
+#include <linux/memory_hotplug.h>
+#include <linux/io.h>
 #include <soc/tegra/bpmp.h>
+
 
 #define DEVICE_NAME "bpmp-guest" // Device name.
 #define CLASS_NAME "char"	  
@@ -20,6 +24,21 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Vadim Likholetov");					 
 MODULE_DESCRIPTION("NVidia BPMP Guest Proxy Kernel Module"); 
 MODULE_VERSION("0.1");						 
+
+
+#define TX_BUF 0x0000
+#define RX_BUF 0x0200
+#define TX_SIZ 0x0400
+#define RX_SIZ 0x0401
+#define RET_COD 0x0402
+#define MRQ 0x0500
+#define MEM_SIZE 0x1000
+#define MESSAGE_SIZE 0x0200
+#define BASEADDR 0x090c0000
+
+
+static volatile uint64_t *mem = NULL;
+
 
 
 extern int tegra_bpmp_transfer(struct tegra_bpmp *, struct tegra_bpmp_message *);
@@ -102,6 +121,9 @@ int init_module(void)
 	printk(KERN_INFO "bpmp-guest-proxy: device class created correctly\n"); // Made it! device was initialized
 
 
+
+	// map iomem
+	mem =  memremap(BASEADDR,MEM_SIZE,MEMREMAP_WT);
     tegra_bpmp_transfer_redirect=my_tegra_bpmp_transfer; //hook func
 
 	return 0;
@@ -115,6 +137,8 @@ int init_module(void)
 void cleanup_module(void)
 {
 	printk(KERN_INFO "bpmp-guest-proxy: removing module.\n");
+
+	// unmap iomem
 
     tegra_bpmp_transfer_redirect = NULL;   // unhook function
 	device_destroy(bpmp_guest_proxy_class, MKDEV(major_number, 0)); // remove the device
@@ -157,20 +181,9 @@ static ssize_t read(struct file *filep, char *buffer, size_t len, loff_t *offset
 
 
 
-#define TX_BUF 0x0000
-#define RX_BUF 0x0200
-#define TX_SIZ 0x0400
-#define RX_SIZ 0x0401
-#define RET_COD 0x0402
-#define MRQ 0x0500
-#define MEM_SIZE 0x1000
-#define MESSAGE_SIZE 0x0200
-#define BASEADDR 0x090c0000
-
-
 int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *msg)
 {   
-    volatile uint64_t *mem =  ioremap_nocache(BASEADDR,MEM_SIZE);
+    
 
     
     if (msg->tx.size >= MESSAGE_SIZE)
