@@ -195,6 +195,8 @@ int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *m
 {   
 
 	unsigned char io_buffer[MEM_SIZE];
+
+	printk("%s\n", __func__);
 	
     if (msg->tx.size >= MESSAGE_SIZE)
         return -EINVAL;
@@ -220,6 +222,8 @@ int my_tegra_bpmp_transfer(struct tegra_bpmp *bpmp, struct tegra_bpmp_message *m
 	msg->rx.ret = io_buffer[RET_COD];
 
 	printk("msg->rx.ret: %d\n", msg->rx.ret);
+
+	printk("%s, END ret: %d\n", __func__, msg->rx.ret);
 
     return msg->rx.ret;
 }
@@ -336,8 +340,9 @@ static ssize_t write(struct file *filep, const char *buffer, size_t len, loff_t 
 	msg.tx.data = &request;
 	msg.tx.size = sizeof(struct mrq_reset_request);
 
-	printk("Writing from guest driver\n");
-  
+	printk("\n");
+	printk("%s, write, no transfer\n", __FILE__);
+
     printk("&msg: %p\n", &msg);
     hexDump ("msg", &msg, sizeof(struct tegra_bpmp_message));
     printk("msg.tx.data: %p\n", msg.tx.data);
@@ -352,7 +357,8 @@ static ssize_t write(struct file *filep, const char *buffer, size_t len, loff_t 
         return ret;
     }
 
-	return ret;
+	printk("%s, write END ret: %d\n", __FILE__, ret);
+	return len;
 
 #if 0
 	int ret = len;
